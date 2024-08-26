@@ -1,3 +1,5 @@
+use std::array;
+
 use bevy::color::{palettes::tailwind, Srgba};
 use bevy::prelude::*;
 use bevy::render::render_resource::ShaderType;
@@ -321,4 +323,110 @@ pub fn random_colors(count: usize) -> Vec<Color> {
         .choose_multiple(&mut rand::thread_rng(), count)
         .map(|c| (*c).into())
         .collect()
+}
+
+#[derive(Resource, Debug, Clone)]
+pub struct SimulationSettings {
+    pub color_count: usize,
+    pub color_order: [ColorId; COLORS.len()],
+    pub matrix: [[f32; COLORS.len()]; COLORS.len()],
+
+    pub max_distance: f32,
+    pub min_distance: f32,
+    pub max_velocity: f32,
+    pub velocity_half_life: f32,
+    // parameters are relative to max_distance, where max_distance is 1.0
+    pub acceleration_fn: fn(relative_min_distance: f32, dpos: Vec2, attraction: f32) -> Vec2,
+    pub acceleration_method: AccelerationMethod,
+    pub force_factor: f32,
+    pub min_max_x: f32,
+    pub min_max_y: f32,
+}
+
+impl Default for SimulationSettings {
+    fn default() -> Self {
+        Self {
+            color_count: 3,
+            color_order: array::from_fn(|i| ColorId::new(i as u32)),
+            matrix: Default::default(),
+
+            max_distance: 250.0,
+            min_distance: 30.0,
+            max_velocity: 1000.0,
+            velocity_half_life: 0.043,
+            acceleration_fn: acceleration,
+            acceleration_method: AccelerationMethod::R1,
+            force_factor: 1.,
+            min_max_x: 1200.,
+            min_max_y: 800.,
+        }
+    }
+}
+
+impl SimulationSettings {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn randomize_colors(&mut self) {
+        self.color_order.shuffle(&mut rand::thread_rng());
+    }
+
+    pub fn randomize_attractions(&mut self) {
+        self.matrix =
+            array::from_fn(|_| array::from_fn(|_| rand::thread_rng().gen_range(-1.0..1.0)));
+    }
+
+    pub fn reset_attractions(&mut self) {
+        self.matrix = Default::default();
+    }
+
+    pub fn get_attraction(&self, color_a: ColorId, color_b: ColorId) -> f32 {
+        self.matrix[color_a.id as usize][color_b.id as usize]
+    }
+
+    pub fn get_color(&self, color_id: ColorId) -> Srgba {
+        COLORS[color_id.id as usize]
+    }
+
+    pub fn set_acceleration_method(&mut self, method: AccelerationMethod) {
+        self.acceleration_method = method;
+        match method {
+            AccelerationMethod::R1 => self.acceleration_fn = acceleration,
+            AccelerationMethod::R2 => self.acceleration_fn = acceleration2,
+            AccelerationMethod::R3 => self.acceleration_fn = acceleration3,
+            AccelerationMethod::Deg90 => self.acceleration_fn = acceleration90_,
+            AccelerationMethod::Attr => self.acceleration_fn = acceleration_attr,
+            AccelerationMethod::Planets => self.acceleration_fn = planets,
+        }
+    }
+
+    pub fn closest_wrapped_other_position(&self, pos: Vec2, other_pos: Vec2) -> Vec2 {
+        let x_bound = self.min_max_x;
+        let y_bound = self.min_max_y;
+        // Figuring out if by wrapping the position of the other particle, it is closer to our particle.
+        let wrapped_x = if other_pos.x > 0. {
+            other_pos.x - 2. * x_bound
+        } else {
+            other_pos.x + 2. * x_bound
+        };
+        let wrapped_y = if other_pos.y > 0. {
+            other_pos.y - 2. * y_bound
+        } else {
+            other_pos.y + 2. * y_bound
+        };
+
+        let other_x = if (pos.x - wrapped_x).abs() < (pos.x - other_pos.x).abs() {
+            wrapped_x
+        } else {
+            other_pos.x
+        };
+        let other_y = if (pos.y - wrapped_y).abs() < (pos.y - other_pos.y).abs() {
+            wrapped_y
+        } else {
+            other_pos.y
+        };
+
+        Vec2::new(other_x, other_y)
+    }
 }

@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy_egui::EguiPlugin;
 use bevy_vello::{vello::kurbo, VelloPlugin, VelloScene, VelloSceneBundle};
-use camera::{camera_controls, CameraSettings};
+use camera::{camera_controls, CameraSettings, ParticleCamera};
 use compute::ComputePlugin;
 use data::{AttractionRules, Particles, Shape};
 use rayon::prelude::*;
@@ -14,6 +14,7 @@ use vello_utils::{SceneExt, ToPoint};
 mod camera;
 mod compute;
 mod data;
+mod draw;
 mod spatial;
 mod ui;
 mod vello_utils;
@@ -29,7 +30,8 @@ fn main() {
         ))
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, update)
-        .add_systems(Update, (draw, ui::ui, camera_controls))
+        // .add_systems(Update, (draw, ui::ui, camera_controls))
+        .add_systems(Update, (ui::ui, camera_controls))
         .run();
 }
 
@@ -40,6 +42,7 @@ fn setup(mut commands: Commands) {
             pan_speed: 1.,
             scroll_speed: 1.,
         },
+        ParticleCamera,
     ));
 
     let rules = AttractionRules::new_random(vec![

@@ -1,7 +1,10 @@
-use bevy::{input::mouse::MouseWheel, prelude::*};
+use bevy::{input::mouse::MouseWheel, prelude::*, render::extract_component::ExtractComponent};
 use rand::seq::SliceRandom;
 
 use crate::data::COLORS;
+
+#[derive(Component, ExtractComponent, Debug, Clone, Copy, Default)]
+pub struct ParticleCamera;
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct CameraSettings {
@@ -34,11 +37,4 @@ pub fn camera_controls(
     }
 
     camera.translation += Vec3::new(translation.x, translation.y, 0.) * 2. * settings.pan_speed;
-}
-
-fn random_colors(count: usize) -> Vec<Color> {
-    COLORS
-        .choose_multiple(&mut rand::thread_rng(), count)
-        .map(|c| (*c).into())
-        .collect()
 }
