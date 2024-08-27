@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use bevy::{
     core_pipeline::core_2d::graph::{Core2d, Node2d},
@@ -9,10 +9,10 @@ use bevy::{
         render_graph::{self, RenderGraph, RenderGraphApp, RenderLabel, ViewNodeRunner},
         render_resource::{
             binding_types::{storage_buffer, uniform_buffer},
-            encase::impl_matrix,
             BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BufferUsages,
-            CachedComputePipelineId, CachedPipelineState, ComputePassDescriptor, ComputePipeline,
-            Pipeline, PipelineCache, ShaderStages, ShaderType, StorageBuffer, UniformBuffer,
+            BufferVec, CachedComputePipelineId, CachedPipelineState, CommandEncoderDescriptor,
+            ComputePassDescriptor, ComputePipeline, Maintain, Pipeline, PipelineCache,
+            ShaderStages, ShaderType, StorageBuffer, UniformBuffer, UninitBufferVec,
         },
         renderer::{RenderDevice, RenderQueue},
         view::{ViewUniform, ViewUniforms},
@@ -22,8 +22,9 @@ use bevy::{
 
 use crate::{
     camera::ParticleCamera,
-    data::{AttractionRules, Particle, Particles, SimulationSettings, COLORS},
+    data::{Particle, SimulationSettings, COLORS},
     draw::{DrawParticleLabel, DrawParticleNode, DrawParticlePipeline},
+    events::ParticleEvent,
 };
 
 const WORKGROUP_SIZE: u32 = 64;
@@ -32,8 +33,7 @@ pub struct ComputePlugin;
 
 impl Plugin for ComputePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(ExtractComponentPlugin::<ParticleCamera>::default())
-            .add_systems(Startup, setup);
+        app.add_plugins(ExtractComponentPlugin::<ParticleCamera>::default());
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -48,32 +48,17 @@ impl Plugin for ComputePlugin {
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
         render_graph.add_node(ParticleLabel, ParticleNode);
         render_graph.add_node_edge(ParticleLabel, CameraDriverLabel);
-
-        // bevy_mod_debugdump::print_render_graph(app);
-
-        // draw particles setup
     }
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-        render_app.init_resource::<GpuBuffers>();
+        render_app.insert_resource(GpuBuffers::new());
+        render_app.init_resource::<Todo>();
         render_app.init_resource::<ParticleBindGroupLayouts>();
-        render_app.init_resource::<ParticlePipeline>();
+        render_app.init_resource::<ParticlePipelines>();
         // draw particles setup
         render_app.init_resource::<DrawParticlePipeline>();
     }
-}
-
-#[derive(Resource)]
-struct TestParticles(Particles);
-
-fn setup(mut commands: Commands) {
-    let mut particles = Particles::new();
-    particles.change_particle_count(10_000, 100., 100., 3);
-    commands.insert_resource(TestParticles(particles));
-    let mut settings = SimulationSettings::default();
-    settings.randomize_attractions();
-    commands.insert_resource(settings);
 }
 
 #[derive(Resource, ShaderType, Default, Clone, Copy)]
@@ -85,8 +70,12 @@ pub struct GpuSettings {
     pub max_velocity: f32,
     pub velocity_half_life: f32,
     pub force_factor: f32,
-    pub bounds_x: f32,
-    pub bounds_y: f32,
+    pub bounds: Vec2,
+
+    pub particle_size: f32,
+
+    pub new_particles: u32,
+    pub initialized_particles: u32,
 
     pub color_count: u32,
     pub max_color_count: u32,
@@ -135,112 +124,195 @@ fn test_color_matrix() {
     println!("{:?}", matrix.matrix);
 }
 
-#[derive(ShaderType, Default)]
+#[derive(ShaderType, Default, Clone)]
 pub struct GpuParticles {
     #[size(runtime)]
     pub particles: Vec<Particle>,
 }
 
 #[derive(Resource)]
-pub struct ParticlesInfo {
-    pub particle_count: usize,
+pub struct GpuBuffers {
+    /// settings.particle_count >= allocated_particles is ensured in extract_particle_related_things
+    allocated_particles: usize,
+    /// settings.particle_count == initialized_particles is ensured in ParticleNode
+    initialized_particles: AtomicU32,
+    waited: u32,
+    pub particles: UninitBufferVec<Particle>,
+    pub settings: UniformBuffer<GpuSettings>,
+}
+
+impl GpuBuffers {
+    pub fn new() -> Self {
+        Self {
+            allocated_particles: 0,
+            initialized_particles: AtomicU32::new(0),
+            waited: 0,
+            particles: UninitBufferVec::new(
+                BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+            ),
+            settings: UniformBuffer::default(),
+        }
+    }
 }
 
 #[derive(Resource, Default)]
-pub struct GpuBuffers {
-    pub particles: StorageBuffer<GpuParticles>,
-    pub rules: UniformBuffer<GpuSettings>,
+struct Todo {
+    randomize_positions: AtomicBool,
+    randomize_colors: AtomicBool,
+}
+
+impl Todo {
+    fn set_randomize_positions(&self, value: bool) {
+        self.randomize_positions.store(value, Ordering::Relaxed);
+    }
+
+    fn randomize_positions(&self) -> bool {
+        self.randomize_positions.load(Ordering::Relaxed)
+    }
+
+    fn set_randomize_colors(&self, value: bool) {
+        self.randomize_colors.store(value, Ordering::Relaxed);
+    }
+
+    fn randomize_colors(&self) -> bool {
+        self.randomize_colors.load(Ordering::Relaxed)
+    }
 }
 
 fn extract_particle_related_things(
     mut commands: Commands,
-    particles: Extract<Res<TestParticles>>,
     settings: Extract<Res<SimulationSettings>>,
     device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
     mut buffers: ResMut<GpuBuffers>,
     time: Extract<Res<Time<Virtual>>>,
+    mut events_reader: Extract<EventReader<ParticleEvent>>,
+    mut todo: ResMut<Todo>,
 ) {
-    if particles.is_changed() || particles.is_added() {
-        info!("Uploading particles");
-        let mut buffer = StorageBuffer::from(GpuParticles {
-            // this clone would suck but later this particle initialization should happen on the gpu anyway
-            particles: particles.0.particles.clone(),
-        });
-        buffer.add_usages(BufferUsages::VERTEX);
-        buffer.write_buffer(&device, &queue);
-        buffers.particles = buffer;
-        commands.insert_resource(ParticlesInfo {
-            particle_count: particles.0.particles.len(),
-        });
+    commands.insert_resource(settings.clone());
+
+    for event in events_reader.read() {
+        match event {
+            ParticleEvent::RandomizePositions => {
+                todo.set_randomize_positions(true);
+            }
+            ParticleEvent::RandomizeColors => {
+                todo.set_randomize_colors(true);
+            }
+        }
+    }
+
+    buffers.waited += 1;
+    if buffers.allocated_particles < settings.particle_count {
+        info!("Replacing buffer");
+        let new_particles_offset = buffers.particles.len();
+
+        if new_particles_offset == 0 {
+            buffers.particles.add();
+            buffers.particles.add();
+            buffers.particles.write_buffer(&device);
+        }
+
+        let mut new_buffer = UninitBufferVec::<Particle>::new(
+            BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        );
+        for _ in 0..settings.particle_count {
+            new_buffer.add();
+        }
+        new_buffer.write_buffer(&device);
+        let mut command_encoder =
+            device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+        command_encoder.copy_buffer_to_buffer(
+            buffers.particles.buffer().unwrap(),
+            0,
+            new_buffer.buffer().unwrap(),
+            0,
+            (std::mem::size_of::<Particle>() * new_particles_offset) as u64,
+        );
+        queue.submit([command_encoder.finish()]);
+        device.poll(Maintain::Wait);
+
+        buffers.particles = new_buffer;
+
+        buffers.allocated_particles = settings.particle_count;
+        buffers.waited = 0;
     }
 
     let colors = std::array::from_fn(|i| COLORS[i].to_f32_array().into());
     let matrix = ColorMatrix::from_array(settings.matrix);
+    // println!("{:?}", matrix.matrix);
 
-    let settings = GpuSettings {
+    let gpu_settings = GpuSettings {
         delta_time: time.delta_seconds(),
-        particle_count: particles.0.particles.len() as u32,
+        particle_count: settings.particle_count as u32,
         min_distance: settings.min_distance,
         max_distance: settings.max_distance,
         max_velocity: settings.max_velocity,
         velocity_half_life: settings.velocity_half_life,
         force_factor: settings.force_factor,
-        bounds_x: settings.min_max_x,
-        bounds_y: settings.min_max_y,
+        bounds: settings.bounds,
+
+        particle_size: settings.particle_size,
+
+        new_particles: (settings.particle_count as i32
+            - buffers.initialized_particles.load(Ordering::Relaxed) as i32)
+            .max(0) as u32,
+        initialized_particles: buffers.initialized_particles.load(Ordering::Relaxed) as u32,
 
         color_count: settings.color_count as u32,
         max_color_count: COLORS.len() as u32,
         colors,
         matrix,
     };
-    commands.insert_resource(settings);
-
-    let mut buffer = UniformBuffer::from(settings);
+    let mut buffer = UniformBuffer::from(gpu_settings);
+    commands.insert_resource(gpu_settings);
     buffer.add_usages(BufferUsages::VERTEX);
     buffer.write_buffer(&device, &queue);
-    buffers.rules = buffer;
+    buffers.settings = buffer;
 }
 
 #[derive(Resource)]
-pub struct ParticlePipeline {
+pub struct ParticlePipelines {
+    initialize_particles: CachedComputePipelineId,
     update_velocity: CachedComputePipelineId,
     update_position: CachedComputePipelineId,
+    randomize_positions: CachedComputePipelineId,
+    randomize_colors: CachedComputePipelineId,
 }
 
-impl FromWorld for ParticlePipeline {
+impl FromWorld for ParticlePipelines {
     fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
         let layouts = world.resource::<ParticleBindGroupLayouts>();
 
         let shader = world.load_asset("particle.wgsl");
 
         let pipeline_cache = world.resource::<PipelineCache>();
-        let update_velocity = pipeline_cache.queue_compute_pipeline(
-            bevy::render::render_resource::ComputePipelineDescriptor {
-                label: None,
-                layout: layouts.to_vec(),
-                push_constant_ranges: Vec::new(),
-                shader: shader.clone(),
-                shader_defs: vec![],
-                entry_point: "update_velocity".into(),
-            },
-        );
 
-        let update_position = pipeline_cache.queue_compute_pipeline(
-            bevy::render::render_resource::ComputePipelineDescriptor {
-                label: None,
-                layout: layouts.to_vec(),
-                push_constant_ranges: Vec::new(),
-                shader: shader.clone(),
-                shader_defs: vec![],
-                entry_point: "update_position".into(),
-            },
-        );
+        let new_compute_pipeline = |label: &'static str| {
+            pipeline_cache.queue_compute_pipeline(
+                bevy::render::render_resource::ComputePipelineDescriptor {
+                    label: Some(label.into()),
+                    layout: layouts.to_vec(),
+                    push_constant_ranges: Vec::new(),
+                    shader: shader.clone(),
+                    shader_defs: vec![],
+                    entry_point: label.into(),
+                },
+            )
+        };
 
-        ParticlePipeline {
+        let initialize_particles = new_compute_pipeline("initialize_particles");
+        let update_velocity = new_compute_pipeline("update_velocity");
+        let update_position = new_compute_pipeline("update_position");
+        let randomize_positions = new_compute_pipeline("randomize_positions");
+        let randomize_colors = new_compute_pipeline("randomize_colors");
+
+        ParticlePipelines {
+            initialize_particles,
             update_velocity,
             update_position,
+            randomize_positions,
+            randomize_colors,
         }
     }
 }
@@ -255,11 +327,10 @@ impl FromWorld for ParticleBindGroupLayouts {
         let bind_group_layout = render_device.create_bind_group_layout(
             "ParticlesLayout",
             &BindGroupLayoutEntries::sequential(
-                ShaderStages::COMPUTE | ShaderStages::VERTEX,
+                ShaderStages::COMPUTE | ShaderStages::VERTEX | ShaderStages::FRAGMENT,
                 (
-                    storage_buffer::<GpuParticles>(false),
+                    storage_buffer::<Vec<Particle>>(false),
                     uniform_buffer::<GpuSettings>(false),
-                    // WARNING: this is only ok with one camera. multiple cameras not supported
                     uniform_buffer::<ViewUniform>(true),
                 ),
             ),
@@ -284,7 +355,7 @@ fn prepare_bind_groups(
         &layouts[0],
         &BindGroupEntries::sequential((
             buffers.particles.binding().unwrap(),
-            buffers.rules.binding().unwrap(),
+            buffers.settings.binding().unwrap(),
             view_uniforms.uniforms.binding().unwrap(),
         )),
     );
@@ -306,27 +377,58 @@ impl render_graph::Node for ParticleNode {
     ) -> Result<(), render_graph::NodeRunError> {
         let bind_groups = world.resource::<ParticleBindGroups>();
         let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = world.resource::<ParticlePipeline>();
+        let pipeline = world.resource::<ParticlePipelines>();
         let gpu_settings = world.resource::<GpuSettings>();
+        let settings = world.resource::<SimulationSettings>();
+        let buffers = world.resource::<GpuBuffers>();
+        let todo = world.resource::<Todo>();
 
         let mut pass = render_context
             .command_encoder()
             .begin_compute_pass(&ComputePassDescriptor::default());
 
-        let Some(update_velocity) = pipeline_cache.get_compute_pipeline(pipeline.update_velocity)
-        else {
-            return Ok(());
-        };
+        macro_rules! get_pipeline {
+            ($name:ident) => {
+                match pipeline_cache.get_compute_pipeline(pipeline.$name) {
+                    Some(pipeline) => pipeline,
+                    None => return Ok(()),
+                }
+            };
+            () => {};
+        }
 
-        let Some(update_position) = pipeline_cache.get_compute_pipeline(pipeline.update_position)
-        else {
-            return Ok(());
-        };
+        let initialize_particles = get_pipeline!(initialize_particles);
+        let update_velocity = get_pipeline!(update_velocity);
+        let update_position = get_pipeline!(update_position);
+        let randomize_positions = get_pipeline!(randomize_positions);
+        let randomize_colors = get_pipeline!(randomize_colors);
 
         let workgroup_count =
-            (gpu_settings.particle_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+            (settings.particle_count as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
 
         pass.set_bind_group(0, &bind_groups[0], &[0]);
+
+        if todo.randomize_positions() {
+            pass.set_pipeline(randomize_positions);
+            pass.dispatch_workgroups(workgroup_count, 1, 1);
+            todo.set_randomize_positions(false);
+        }
+
+        if todo.randomize_colors() {
+            pass.set_pipeline(randomize_colors);
+            pass.dispatch_workgroups(workgroup_count, 1, 1);
+            todo.set_randomize_colors(false);
+        }
+
+        // Spawn new particles if neededd
+        if gpu_settings.new_particles > 0 {
+            let w = (gpu_settings.new_particles as f32 / WORKGROUP_SIZE as f32).ceil() as u32;
+            pass.set_pipeline(initialize_particles);
+            pass.dispatch_workgroups(w, 1, 1);
+            buffers
+                .initialized_particles
+                .fetch_add(gpu_settings.new_particles, Ordering::Relaxed);
+        }
 
         pass.set_pipeline(update_velocity);
         pass.dispatch_workgroups(workgroup_count, 1, 1);

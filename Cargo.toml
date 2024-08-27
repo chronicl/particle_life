@@ -3,10 +3,12 @@ name = "bevy_particle_life"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev]
+opt-level = 3
+
 [dependencies]
 bevy = { version = "0.14.1", features = ["bevy_dev_tools", "file_watcher"] }
 bevy_egui = "0.29.0"
 bevy_mod_debugdump = "0.11.1"
-bevy_vello = "0.6.1"
 rand = "0.8.5"
 rayon = "1.10.0"

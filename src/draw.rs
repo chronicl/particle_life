@@ -2,19 +2,18 @@ use bevy::{
     ecs::query::QueryItem,
     prelude::*,
     render::{
-        graph::CameraDriverLabel,
-        render_graph::{self, RenderGraph, RenderGraphContext, RenderLabel},
-        render_resource::{binding_types::storage_buffer, *},
-        renderer::{RenderContext, RenderDevice, RenderQueue},
+        render_graph::{self, RenderGraphContext, RenderLabel},
+        render_resource::*,
+        renderer::{RenderContext, RenderDevice},
         texture::BevyDefault,
         view::{ViewTarget, ViewUniformOffset},
-        Extract, Render, RenderApp, RenderSet,
     },
 };
 
 use crate::{
     camera::ParticleCamera,
-    compute::{GpuParticles, ParticleBindGroupLayouts, ParticleBindGroups, ParticlesInfo},
+    compute::{ParticleBindGroupLayouts, ParticleBindGroups},
+    data::SimulationSettings,
 };
 
 #[derive(Resource)]
@@ -88,8 +87,8 @@ impl render_graph::ViewNode for DrawParticleNode {
         let bind_groups = world.resource::<ParticleBindGroups>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<DrawParticlePipeline>();
-        let particles_info = world.resource::<ParticlesInfo>();
         let render_device = world.resource::<RenderDevice>();
+        let settings = world.resource::<SimulationSettings>();
 
         let color_attachment = view_target.get_color_attachment();
 
@@ -112,7 +111,7 @@ impl render_graph::ViewNode for DrawParticleNode {
 
             pass.set_bind_group(0, &bind_groups[0], &[uniform_offset.offset]);
             pass.set_pipeline(pipeline);
-            pass.draw(0..6, 0..particles_info.particle_count as u32);
+            pass.draw(0..6, 0..settings.particle_count as u32);
         }
 
         Ok(())
