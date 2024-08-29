@@ -12,7 +12,7 @@ use bevy::{
 
 use crate::{
     camera::ParticleCamera,
-    compute::{ParticleBindGroupLayouts, ParticleBindGroups},
+    compute::{ParticleBindGroupLayouts, ParticleBindGroups, SHADER_DRAW},
     data::SimulationSettings,
 };
 
@@ -26,7 +26,10 @@ impl FromWorld for DrawParticlePipeline {
         let render_device = world.resource::<RenderDevice>();
         let layouts = world.resource::<ParticleBindGroupLayouts>();
 
-        let shader = world.load_asset("particle.wgsl");
+        // Only loading it here instead of using the internal asset
+        // because the internal asset doesn't hot reload (bug)
+        // let shader = world.load_asset("draw.wgsl");
+        let shader = SHADER_DRAW;
 
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = pipeline_cache.queue_render_pipeline(

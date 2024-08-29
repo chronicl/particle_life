@@ -19,7 +19,7 @@ pub const COLORS: &[Srgba] = &[
     tailwind::ORANGE_600,
     tailwind::PINK_600,
     tailwind::PURPLE_600,
-    tailwind::RED_600,
+    tailwind::GRAY_600,
     tailwind::ROSE_600,
     tailwind::SKY_600,
     tailwind::SLATE_600,
@@ -103,7 +103,7 @@ impl Default for SimulationSettings {
             max_velocity: 1000.0,
             velocity_half_life: 0.043,
             force_factor: 1.,
-            bounds: Vec2::new(1200., 800.),
+            bounds: Vec2::new(1250., 750.),
 
             particle_size: 4.,
             shape: Shape::Square,

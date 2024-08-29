@@ -40,7 +40,7 @@ pub fn ui(
         }
 
         ui.add(
-            egui::Slider::new(&mut settings.particle_count, 0..=3000)
+            egui::Slider::new(&mut settings.particle_count, 0..=300_000)
                 .text("particle count")
                 .clamp_to_range(false),
         );
@@ -70,12 +70,12 @@ pub fn ui(
                 .clamp_to_range(false),
         );
         ui.add(
-            egui::Slider::new(&mut settings.bounds.x, 100.0..=3000.0)
+            egui::Slider::new(&mut settings.bounds.x, 100.0..=30_000.0)
                 .text("bounds x")
                 .clamp_to_range(false),
         );
         ui.add(
-            egui::Slider::new(&mut settings.bounds.y, 100.0..=3000.0)
+            egui::Slider::new(&mut settings.bounds.y, 100.0..=30_000.0)
                 .text("bounds y")
                 .clamp_to_range(false),
         );

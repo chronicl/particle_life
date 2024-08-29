@@ -7,7 +7,7 @@ edition = "2021"
 opt-level = 3
 
 [dependencies]
-bevy = { version = "0.14.1", features = ["bevy_dev_tools", "file_watcher"] }
+bevy = { version = "0.14.1", features = ["file_watcher"] }
 bevy_egui = "0.29.0"
 bevy_mod_debugdump = "0.11.1"
 rand = "0.8.5"
