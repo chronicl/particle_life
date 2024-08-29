@@ -338,7 +338,10 @@ fn extract_particle_related_things(
     buffer.write_buffer(&device, &queue);
     buffers.sorted_indices = buffer;
 
-    let size = gpu_settings.cell_count.x * gpu_settings.cell_count.y;
+    // + 1 because we want the one additional cell containing
+    // the total particle count for branchless algorithm in shader.
+    // start = counter[ci], end = counter[ci + 1]
+    let size = gpu_settings.cell_count.x * gpu_settings.cell_count.y + 1;
     let thread_blocks = (size as f32 / 256 as f32).ceil() as u32;
     buffers.thread_blocks = thread_blocks;
     let mut buffer = StorageBuffer::from(vec![0u32; size as usize]);

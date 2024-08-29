@@ -48,25 +48,6 @@ fn vertex(input: VertexInput) -> VertexOutput {
     out.position = clip_position;
     out.color = settings.colors[particle.color];
 
-    let ci = cell_index(particle.position);
-    let x =4.;
-    let y = 1.;
-    var surrounding = surrounding_cells(-settings.bounds + vec2<f32>(250. * x, 250. * y));
-    var is_in = false;
-    for (var i = 0u; i < 9u; i++) {
-        if (ci == surrounding[i]) {
-            is_in = true;
-            break;
-        }
-    }
-    if (is_in) {
-        out.color = vec4<f32>(0., 0., 0., 1.);
-    }
-
-    // if (settings.bounds.y == 750.) {
-    //     out.color = vec4<f32>(1., 0., 0., 1.);
-    // }
-
     return out;
 }
 

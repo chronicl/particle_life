@@ -32,7 +32,7 @@ fn main(
     @builtin(num_workgroups) griddim: vec3<u32>) {
 
     //No push constant, so we use device memory instead...
-    let size = settings.cell_count.x * settings.cell_count.y;
+    let size = settings.cell_count.x * settings.cell_count.y + 1;
 
     //acquire partition index, set the lock
     if(threadid.x == 0u){
