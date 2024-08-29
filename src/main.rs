@@ -4,6 +4,7 @@ use bevy_egui::EguiPlugin;
 use camera::{camera_controls, CameraSettings, ParticleCamera};
 use compute::ComputePlugin;
 use data::SimulationSettings;
+use draw::DrawPlugin;
 use events::ParticleEvent;
 
 mod camera;
@@ -11,7 +12,6 @@ mod compute;
 mod data;
 mod draw;
 mod events;
-mod spatial;
 mod ui;
 
 fn main() {
@@ -20,8 +20,10 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             EguiPlugin,
+            // Used by ui to display the fps.
             FrameTimeDiagnosticsPlugin::default(),
             ComputePlugin,
+            DrawPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (ui::ui, camera_controls))

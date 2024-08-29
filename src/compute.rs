@@ -2,23 +2,28 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use bevy::{
     asset::load_internal_asset,
-    core_pipeline::core_2d::graph::{Core2d, Node2d},
     prelude::*,
     render::{
         extract_component::ExtractComponentPlugin,
         graph::CameraDriverLabel,
-        render_graph::{self, RenderGraph, RenderGraphApp, RenderLabel, ViewNodeRunner},
+        render_graph::{self, RenderGraph, RenderLabel},
         render_resource::{
             binding_types::{storage_buffer, uniform_buffer},
             BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BufferUsages,
-            BufferVec, CachedComputePipelineId, CachedPipelineState, CommandEncoderDescriptor,
-            ComputePassDescriptor, ComputePipeline, Maintain, Pipeline, PipelineCache,
-            ShaderStages, ShaderType, StorageBuffer, UniformBuffer, UninitBufferVec,
+            CachedComputePipelineId, CommandEncoderDescriptor, ComputePassDescriptor, Maintain,
+            PipelineCache, ShaderStages, ShaderType, StorageBuffer, UniformBuffer, UninitBufferVec,
         },
         renderer::{RenderDevice, RenderQueue},
         view::{ViewUniform, ViewUniforms},
         Extract, Render, RenderApp, RenderSet,
     },
+};
+use rand::Rng;
+
+use crate::{
+    camera::ParticleCamera,
+    data::{Particle, SimulationSettings, COLORS},
+    events::ParticleEvent,
 };
 
 pub const SHADER_FUNCTIONS: Handle<Shader> = Handle::weak_from_u128(4912569123382610166);
@@ -52,13 +57,6 @@ fn load_shaders(app: &mut App) {
     );
 }
 
-use crate::{
-    camera::ParticleCamera,
-    data::{Particle, SimulationSettings, COLORS},
-    draw::{DrawParticleLabel, DrawParticleNode, DrawParticlePipeline},
-    events::ParticleEvent,
-};
-
 const WORKGROUP_SIZE: u32 = 64;
 
 pub struct ComputePlugin;
@@ -75,9 +73,7 @@ impl Plugin for ComputePlugin {
             .add_systems(
                 Render,
                 prepare_bind_groups.in_set(RenderSet::PrepareBindGroups),
-            )
-            .add_render_graph_node::<ViewNodeRunner<DrawParticleNode>>(Core2d, DrawParticleLabel)
-            .add_render_graph_edge(Core2d, Node2d::Tonemapping, DrawParticleLabel);
+            );
 
         let mut render_graph = render_app.world_mut().resource_mut::<RenderGraph>();
         render_graph.add_node(ParticleLabel, ParticleNode);
@@ -90,8 +86,6 @@ impl Plugin for ComputePlugin {
         render_app.init_resource::<Todo>();
         render_app.init_resource::<ParticleBindGroupLayouts>();
         render_app.init_resource::<ParticlePipelines>();
-        // draw particles setup
-        render_app.init_resource::<DrawParticlePipeline>();
     }
 }
 
@@ -105,19 +99,25 @@ pub struct GpuSettings {
     pub velocity_half_life: f32,
     pub force_factor: f32,
     pub bounds: Vec2,
-    pub cell_count: UVec2,
-
-    pub particle_size: f32,
+    pub max_attractions: u32,
 
     pub new_particles: u32,
     pub initialized_particles: u32,
+
+    // 0 = Circle, 1 = Square
+    pub shape: u32,
+    pub circle_corners: u32,
+    pub particle_size: f32,
+
+    // not setting, but info that the shaders need
+    pub cell_count: UVec2,
+    pub seed: u32,
 
     pub color_count: u32,
     pub max_color_count: u32,
     pub colors: [Vec4; COLORS.len()],
     // This is actually a COLORS.len()xCOLORS.len() matrix of f32
     pub matrix: ColorMatrix,
-    // prefix sum info
 }
 
 #[derive(ShaderType, Clone, Copy)]
@@ -281,7 +281,16 @@ fn extract_particle_related_things(
         buffers.waited = 0;
     }
 
-    let colors = std::array::from_fn(|i| COLORS[i].to_f32_array().into());
+    let colors = std::array::from_fn(|i| {
+        let c = COLORS[settings.color_order[i].id as usize].to_u8_array();
+        [
+            linear_f32_from_gamma_u8(c[0]),
+            linear_f32_from_gamma_u8(c[1]),
+            linear_f32_from_gamma_u8(c[2]),
+            linear_f32_from_gamma_u8(c[3]),
+        ]
+        .into()
+    });
     let matrix = ColorMatrix::from_array(settings.matrix);
     // println!("{:?}", matrix.matrix);
 
@@ -293,20 +302,23 @@ fn extract_particle_related_things(
         max_velocity: settings.max_velocity,
         velocity_half_life: settings.velocity_half_life,
         force_factor: settings.force_factor,
-        // Making the bounds a tiny bit smaller so that floating
-        // point errors in the shader don't cause the grid cells to be one too many
         bounds: settings.bounds,
-        cell_count: UVec2::new(
-            (2. * settings.bounds.x / settings.max_distance) as u32,
-            (2. * settings.bounds.y / settings.max_distance) as u32,
-        ),
-
-        particle_size: settings.particle_size,
+        max_attractions: settings.max_attractions,
 
         new_particles: (settings.particle_count as i32
             - buffers.initialized_particles.load(Ordering::Relaxed) as i32)
             .max(0) as u32,
         initialized_particles: buffers.initialized_particles.load(Ordering::Relaxed) as u32,
+
+        shape: settings.shape as u32,
+        circle_corners: settings.circle_corners,
+        particle_size: settings.particle_size,
+
+        cell_count: UVec2::new(
+            (2. * settings.bounds.x / settings.max_distance) as u32,
+            (2. * settings.bounds.y / settings.max_distance) as u32,
+        ),
+        seed: rand::thread_rng().gen(),
 
         color_count: settings.color_count as u32,
         max_color_count: COLORS.len() as u32,
@@ -320,7 +332,8 @@ fn extract_particle_related_things(
     buffers.settings = buffer;
 
     // TODO: these buffers should not be uploaded every frame.
-    // They should be wiped gpu side and only uploaded once their size needs to change.
+    // They should be reset gpu side and only uploaded once their size needs to change.
+    // In practice however, these uploads are not expensive in comparison to the computations in the shaders.
     let mut buffer = StorageBuffer::from(vec![0u32; settings.particle_count]);
     buffer.write_buffer(&device, &queue);
     buffers.sorted_indices = buffer;
@@ -337,6 +350,14 @@ fn extract_particle_related_things(
     let mut buffer = StorageBuffer::from(0u32);
     buffer.write_buffer(&device, &queue);
     buffers.prefix_sum_index = buffer;
+}
+
+pub fn linear_f32_from_gamma_u8(s: u8) -> f32 {
+    if s <= 10 {
+        s as f32 / 3294.6
+    } else {
+        ((s as f32 + 14.025) / 269.025).powf(2.4)
+    }
 }
 
 #[test]

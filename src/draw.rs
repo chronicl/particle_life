@@ -1,20 +1,40 @@
 use bevy::{
+    core_pipeline::core_2d::graph::{Core2d, Node2d},
     ecs::query::QueryItem,
     prelude::*,
     render::{
-        render_graph::{self, RenderGraphContext, RenderLabel},
+        render_graph::{self, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNodeRunner},
         render_resource::*,
-        renderer::{RenderContext, RenderDevice},
+        renderer::RenderContext,
         texture::BevyDefault,
         view::{ViewTarget, ViewUniformOffset},
+        RenderApp,
     },
 };
 
 use crate::{
     camera::ParticleCamera,
     compute::{ParticleBindGroupLayouts, ParticleBindGroups, SHADER_DRAW},
-    data::SimulationSettings,
+    data::{Shape, SimulationSettings},
 };
+
+pub struct DrawPlugin;
+
+impl Plugin for DrawPlugin {
+    fn build(&self, app: &mut App) {
+        // We are borrowing the bind groups from the compute plugin.
+        // So very little setup is needed here.
+        let render_app = app.sub_app_mut(RenderApp);
+        render_app
+            .add_render_graph_node::<ViewNodeRunner<DrawParticleNode>>(Core2d, DrawParticleLabel)
+            .add_render_graph_edge(Core2d, Node2d::Tonemapping, DrawParticleLabel);
+    }
+
+    fn finish(&self, app: &mut App) {
+        let render_app = app.sub_app_mut(RenderApp);
+        render_app.init_resource::<DrawParticlePipeline>();
+    }
+}
 
 #[derive(Resource)]
 pub struct DrawParticlePipeline {
@@ -23,7 +43,6 @@ pub struct DrawParticlePipeline {
 
 impl FromWorld for DrawParticlePipeline {
     fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
         let layouts = world.resource::<ParticleBindGroupLayouts>();
 
         // Only loading it here instead of using the internal asset
@@ -90,7 +109,6 @@ impl render_graph::ViewNode for DrawParticleNode {
         let bind_groups = world.resource::<ParticleBindGroups>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<DrawParticlePipeline>();
-        let render_device = world.resource::<RenderDevice>();
         let settings = world.resource::<SimulationSettings>();
 
         let color_attachment = view_target.get_color_attachment();
@@ -114,7 +132,17 @@ impl render_graph::ViewNode for DrawParticleNode {
 
             pass.set_bind_group(0, &bind_groups[0], &[uniform_offset.offset]);
             pass.set_pipeline(pipeline);
-            pass.draw(0..6, 0..settings.particle_count as u32);
+            match settings.shape {
+                Shape::Circle => {
+                    pass.draw(
+                        0..settings.circle_corners * 3,
+                        0..settings.particle_count as u32,
+                    );
+                }
+                Shape::Square => {
+                    pass.draw(0..6, 0..settings.particle_count as u32);
+                }
+            }
         }
 
         Ok(())

@@ -33,12 +33,17 @@ struct Settings {
     velocity_half_life: f32,
     force_factor: f32,
     bounds: vec2<f32>,
-    cell_count: vec2<u32>,
-
-    particle_size: f32,
+    max_attractions: u32,
 
     new_particles: u32,
     initialized_particles: u32,
+
+    shape: u32,
+    circle_corners: u32,
+    particle_size: f32,
+
+    cell_count: vec2<u32>,
+    seed: u32,
 
     color_count: u32,
     max_color_count: u32,

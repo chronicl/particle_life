@@ -9,7 +9,7 @@ use bevy_egui::{
 
 use crate::{
     camera::CameraSettings,
-    data::{random_colors, AccelerationMethod, Shape, SimulationSettings, COLORS},
+    data::{AccelerationMethod, Shape, SimulationSettings, COLORS},
     events::ParticleEvent,
 };
 
@@ -79,6 +79,11 @@ pub fn ui(
                 .text("bounds y")
                 .clamp_to_range(false),
         );
+        ui.add(
+            egui::Slider::new(&mut settings.max_attractions, 1..=30_000)
+                .text("max attractions")
+                .clamp_to_range(false),
+        );
 
         ui.add(
             egui::Slider::new(&mut settings.color_count, 1..=COLORS.len())
@@ -94,7 +99,7 @@ pub fn ui(
                 let color = color.to_srgba().to_u8_array();
                 show_color(
                     ui,
-                    egui::Rgba::from_srgba_premultiplied(color[0], color[1], color[2], color[3]),
+                    egui::Rgba::from_srgba_unmultiplied(color[0], color[1], color[2], color[3]),
                     egui::Vec2::new(20., 20.),
                 );
             };
@@ -102,12 +107,12 @@ pub fn ui(
             ui.horizontal(|ui| {
                 color_ui(ui, Srgba::NONE);
                 for color in 0..settings.color_count {
-                    color_ui(ui, COLORS[color]);
+                    color_ui(ui, COLORS[settings.color_order[color].id as usize]);
                 }
             });
             for i in 0..settings.color_count {
                 ui.horizontal(|ui| {
-                    color_ui(ui, COLORS[i]);
+                    color_ui(ui, COLORS[settings.color_order[i].id as usize]);
 
                     for j in 0..settings.color_count {
                         ui.add(egui::DragValue::new(&mut settings.matrix[i][j]).speed(0.01));
@@ -149,9 +154,19 @@ pub fn ui(
         ui.add_space(10.);
         ui.label("Visual Settings");
 
+        if ui.button("Randomize color palette").clicked() {
+            settings.randomize_colors();
+        }
+
         ui.add(
             egui::Slider::new(&mut settings.particle_size, 1.0..=100.0)
                 .text("particle_size")
+                .clamp_to_range(false),
+        );
+
+        ui.add(
+            egui::Slider::new(&mut settings.circle_corners, 8..=128)
+                .text("circle_corners")
                 .clamp_to_range(false),
         );
 
