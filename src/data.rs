@@ -119,7 +119,7 @@ impl Default for SimulationSettings {
             shape: Shape::Circle,
             circle_corners: 16,
             rgb: false,
-            rgb_speed: 1.
+            rgb_speed: 1.,
         }
     }
 }
@@ -140,7 +140,9 @@ impl SimulationSettings {
     }
 
     pub fn reset_attractions(&mut self) {
-        self.matrix = Default::default();
+        self.matrix = (0..COLORS.len())
+            .map(|_| (0..COLORS.len()).map(|_| 0.).collect())
+            .collect();
     }
 
     pub fn max_distance(&self) -> u32 {

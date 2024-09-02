@@ -25,6 +25,8 @@ pub fn camera_controls(
     let egui_context = egui_contexts.ctx_mut();
     let block_mouse = egui_context.is_pointer_over_area() || egui_context.is_using_pointer();
 
+    let (mut camera, mut projection, settings) = camera.single_mut();
+
     let mut translation_from_mouse = Vec3::ZERO;
     if mouse.pressed(MouseButton::Left) | mouse.pressed(MouseButton::Right) {
         for event in mouse_motion.read() {
@@ -34,7 +36,7 @@ pub fn camera_controls(
         mouse_motion.read();
     }
 
-    let mut translation = Vec2::ZERO;
+    let mut translation = Vec3::ZERO;
     if keyboard.pressed(KeyCode::KeyW) {
         translation.y += 1.;
     }
@@ -47,8 +49,13 @@ pub fn camera_controls(
     if keyboard.pressed(KeyCode::KeyD) {
         translation.x += 1.;
     }
+    if keyboard.pressed(KeyCode::KeyE) {
+        projection.scale *= 1. - settings.scroll_speed * 0.003;
+    }
+    if keyboard.pressed(KeyCode::KeyQ) {
+        projection.scale *= 1. + settings.scroll_speed * 0.003;
+    }
 
-    let (mut camera, mut projection, settings) = camera.single_mut();
     camera.translation += Vec3::new(translation.x, translation.y, 0.) * 2. * settings.pan_speed;
 
     if !block_mouse {

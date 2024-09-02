@@ -55,7 +55,7 @@ pub fn ui(
             let mut relative_speed = time.relative_speed();
             let before = relative_speed;
             ui.add(
-                egui::Slider::new(&mut relative_speed, 0.1..=10.)
+                egui::Slider::new(&mut relative_speed, 0.0..=10.)
                     .text("simulation speed")
                     .clamp_to_range(false),
             );
@@ -134,24 +134,27 @@ pub fn ui(
                 };
 
                 ui.horizontal(|ui| {
-                    color_ui(ui, Srgba::NONE);
-                    for color in 0..settings.color_count {
-                        color_ui(ui, COLORS[settings.color_order[color].id as usize]);
-                    }
-                });
-                for i in 0..settings.color_count {
-                    ui.horizontal(|ui| {
-                        color_ui(ui, COLORS[settings.color_order[i].id as usize]);
-
-                        for j in 0..settings.color_count {
-                            ui.add(
-                                egui::DragValue::new(&mut settings.matrix[i][j])
-                                    .speed(0.01)
-                                    .custom_formatter(|v, _| format!("{:.2}", v)),
-                            );
+                    ui.vertical(|ui| {
+                        color_ui(ui, Srgba::NONE);
+                        for color in 0..settings.color_count {
+                            color_ui(ui, COLORS[settings.color_order[color].id as usize]);
                         }
                     });
-                }
+
+                    for i in 0..settings.color_count {
+                        ui.vertical(|ui| {
+                            color_ui(ui, COLORS[settings.color_order[i].id as usize]);
+
+                            for j in 0..settings.color_count {
+                                ui.add(
+                                    egui::DragValue::new(&mut settings.matrix[i][j])
+                                        .speed(0.01)
+                                        .custom_formatter(|v, _| format!("{:.2}", v)),
+                                );
+                            }
+                        });
+                    }
+                });
             }
 
             if ui.button("Randomize attractions").clicked() {

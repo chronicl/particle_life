@@ -104,8 +104,8 @@ fn acceleration1(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
     let dist = length(dpos);
     var force: f32;
     if (dist < rmin) {
-        // always push away
-        force = 2. * (dist / rmin - 1.);
+        // always push away. goes from -2 to 0 for dist 0 to rmin
+        force = (dist / rmin - 1.);
     } else {
         force = a * (1. - abs(1. + rmin - 2. * dist) / (1. - rmin));
     }
