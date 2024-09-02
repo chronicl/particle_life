@@ -91,6 +91,7 @@ impl Plugin for ComputePlugin {
 
 #[derive(Resource, ShaderType, Default, Clone, Copy)]
 pub struct GpuSettings {
+    pub time: f32,
     pub delta_time: f32,
     pub particle_count: u32,
     pub min_distance: f32,
@@ -100,6 +101,7 @@ pub struct GpuSettings {
     pub force_factor: f32,
     pub bounds: Vec2,
     pub max_attractions: u32,
+    pub acceleration_method: u32,
 
     pub new_particles: u32,
     pub initialized_particles: u32,
@@ -108,6 +110,8 @@ pub struct GpuSettings {
     pub shape: u32,
     pub circle_corners: u32,
     pub particle_size: f32,
+    pub rgb: u32,
+    pub rgb_speed: f32,
 
     // not setting, but info that the shaders need
     pub cell_count: UVec2,
@@ -134,7 +138,7 @@ impl Default for ColorMatrix {
 }
 
 impl ColorMatrix {
-    pub fn from_array(array: [[f32; COLORS.len()]; COLORS.len()]) -> Self {
+    pub fn new(array: &[Vec<f32>]) -> Self {
         let mut this = Self::default();
         for (y, row) in array.iter().enumerate() {
             for (x, value) in row.iter().enumerate() {
@@ -150,14 +154,6 @@ impl ColorMatrix {
         let offset = flat_index % 4;
         self.matrix[index][offset] = value.into();
     }
-}
-
-#[test]
-fn test_color_matrix() {
-    let matrix = ColorMatrix::from_array(std::array::from_fn(|i| {
-        std::array::from_fn(|j| (i * COLORS.len() + j) as f32)
-    }));
-    println!("{:?}", matrix.matrix);
 }
 
 #[derive(Resource, Default)]
@@ -291,19 +287,20 @@ fn extract_particle_related_things(
         ]
         .into()
     });
-    let matrix = ColorMatrix::from_array(settings.matrix);
-    // println!("{:?}", matrix.matrix);
+    let matrix = ColorMatrix::new(&settings.matrix);
 
     let gpu_settings = GpuSettings {
+        time: time.elapsed_seconds(),
         delta_time: time.delta_seconds(),
         particle_count: settings.particle_count as u32,
-        min_distance: settings.min_distance,
-        max_distance: settings.max_distance,
+        min_distance: settings.min_distance as f32,
+        max_distance: settings.max_distance() as f32,
         max_velocity: settings.max_velocity,
         velocity_half_life: settings.velocity_half_life,
         force_factor: settings.force_factor,
-        bounds: settings.bounds,
+        bounds: Vec2::new(settings.bounds().x as f32, settings.bounds().y as f32),
         max_attractions: settings.max_attractions,
+        acceleration_method: settings.acceleration_method as u32,
 
         new_particles: (settings.particle_count as i32
             - buffers.initialized_particles.load(Ordering::Relaxed) as i32)
@@ -313,11 +310,10 @@ fn extract_particle_related_things(
         shape: settings.shape as u32,
         circle_corners: settings.circle_corners,
         particle_size: settings.particle_size,
+        rgb: settings.rgb as u32,
+        rgb_speed: settings.rgb_speed,
 
-        cell_count: UVec2::new(
-            (2. * settings.bounds.x / settings.max_distance) as u32,
-            (2. * settings.bounds.y / settings.max_distance) as u32,
-        ),
+        cell_count: settings.cell_count(),
         seed: rand::thread_rng().gen(),
 
         color_count: settings.color_count as u32,
@@ -364,30 +360,11 @@ pub fn linear_f32_from_gamma_u8(s: u8) -> f32 {
 }
 
 #[test]
-fn test_cell_index() {
-    let settings = SimulationSettings::default();
-    let position = -settings.bounds + Vec2::new(1.5 * settings.max_distance, settings.max_distance);
-    let cell_index = cell_index(&settings, position);
-    println!("{}", cell_index);
-}
-
-fn cell_index(settings: &SimulationSettings, position: Vec2) -> u32 {
-    let p = settings.bounds + position;
-    println!("{:?}", p);
-    let cells_x = (2. * settings.bounds.x / settings.max_distance).ceil() as u32;
-    println!("{}", cells_x);
-    let cell_index_2d = (p / settings.max_distance).floor();
-    println!("{:?}", cell_index_2d);
-    cell_index_2d.x as u32 + cell_index_2d.y as u32 * cells_x
-}
-
-#[test]
 fn test_surrounding_cells() {
     let cells = UVec2::new(3, 3);
     let cell = UVec2::new(2, 2);
     let surrounding = surrounding_cells(cell, cells);
     println!("{:?}", surrounding);
-    // assert_eq!(surrounding, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
 }
 
 #[test]

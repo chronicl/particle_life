@@ -63,7 +63,7 @@ fn randomize_positions(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    var seed =  global_id.x;
+    var seed =  settings.seed + global_id.x;
     let p = &particles.particles[global_id.x];
     (*p).position = (2. * rand_vec2f(&seed) - 1.) * settings.bounds;
 }

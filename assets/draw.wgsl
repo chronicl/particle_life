@@ -46,7 +46,17 @@ fn vertex(input: VertexInput) -> VertexOutput {
     let clip_position = view.clip_from_world * view_position;
 
     out.position = clip_position;
-    out.color = settings.colors[particle.color];
+
+    if (settings.rgb == 1u) {
+        let color_f32 = (f32(particle.color) + settings.time * settings.rgb_speed) % f32(settings.max_color_count);
+        let color_1 = settings.colors[u32(floor(color_f32))];
+        let color_2 = settings.colors[u32(ceil(color_f32)) % settings.max_color_count];
+        let t = fract(color_f32);
+
+        out.color = mix(color_1, color_2, t);
+    } else {
+        out.color = settings.colors[particle.color];
+    }
 
     return out;
 }

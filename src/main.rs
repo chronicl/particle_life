@@ -26,7 +26,7 @@ fn main() {
             DrawPlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, (ui::ui, camera_controls))
+        .add_systems(Update, (ui::ui, camera_controls).chain())
         .run();
 }
 

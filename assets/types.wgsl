@@ -25,6 +25,7 @@ struct Particle {
 }
 
 struct Settings {
+    time: f32,
     delta_time: f32,
     particle_count: u32,
     min_distance: f32,
@@ -34,6 +35,7 @@ struct Settings {
     force_factor: f32,
     bounds: vec2<f32>,
     max_attractions: u32,
+    acceleration_method: u32,
 
     new_particles: u32,
     initialized_particles: u32,
@@ -41,12 +43,14 @@ struct Settings {
     shape: u32,
     circle_corners: u32,
     particle_size: f32,
+    rgb: u32,
+    rgb_speed: f32,
 
     cell_count: vec2<u32>,
     seed: u32,
 
     color_count: u32,
     max_color_count: u32,
-    colors: array<vec4<f32>, 18>,
+    colors: array<vec4<f32>, 16>,
     matrix: array<vec4<f32>, 5>,
 }

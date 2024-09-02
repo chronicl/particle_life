@@ -2,6 +2,8 @@
 
 #import types::settings;
 
+const PI: f32 = 3.14159;
+
 fn closest_wrapped_other_position(pos: vec2<f32>, other_pos: vec2<f32>, bounds: vec2<f32>) -> vec2<f32> {
     var other = other_pos;
 
@@ -33,17 +35,6 @@ fn get_matrix_value(x: u32, y: u32) -> f32 {
     let index = flat_index / 4;
     let offset = flat_index % 4;
     return settings.matrix[index][offset];
-}
-
-fn acceleration(rmin: f32, pos: vec2<f32>, a: f32) -> vec2<f32> {
-    let dist = length(pos);
-    var force: f32;
-    if (dist < rmin) {
-        force = dist / rmin - 1.;
-    } else {
-        force = a * (1. - abs(1. + rmin - 2. * dist) / (1. - rmin));
-    }
-    return pos * force / dist;
 }
 
 fn cell_count() -> u32 {
@@ -95,4 +86,61 @@ fn rem_euclid(n: i32, modulo: u32) -> u32 {
     } else {
         return u32(n);
     }
+}
+
+fn acceleration(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
+    switch (settings.acceleration_method) {
+        case 0u: { return acceleration1(rmin, dpos, a); }
+        case 1u: { return acceleration2(rmin, dpos, a); }
+        case 2u: { return acceleration3(rmin, dpos, a); }
+        case 3u: { return acceleration90_(rmin, dpos, a); }
+        case 4u: { return acceleration_attr(rmin, dpos, a); }
+        case 5u: { return planets(rmin, dpos, a); }
+        default: { return acceleration1(rmin, dpos, a); }
+    }
+}
+
+fn acceleration1(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
+    let dist = length(dpos);
+    var force: f32;
+    if (dist < rmin) {
+        // always push away
+        force = 2. * (dist / rmin - 1.);
+    } else {
+        force = a * (1. - abs(1. + rmin - 2. * dist) / (1. - rmin));
+    }
+    return dpos * force / dist;
+}
+
+// TODO: make these more efficient by not reusing acceleration1
+fn acceleration2(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
+    let dist = length(dpos);
+    return acceleration1(rmin, dpos, a) / dist;
+}
+
+fn acceleration3(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
+    let dist = length(dpos);
+    return acceleration1(rmin, dpos, a) / (dist * dist);
+}
+
+fn acceleration90_(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
+    let dist = length(dpos);
+    var force = a * (1. - dist);
+    return vec2<f32>(-dpos.y, dpos.x) * force / dist;
+}
+
+fn acceleration_attr(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
+   let dist = length(dpos);
+   var force = 1. - dist;
+   let angle = -a * PI;
+   return vec2<f32>(
+      cos(angle) * dpos.x + sin(angle) * dpos.y,
+       -sin(angle) * dpos.x +cos(angle) * dpos.y,
+   ) * force
+       / dist;
+}
+
+fn planets(rmin: f32, dpos: vec2<f32>, a: f32) -> vec2<f32> {
+    let dist = max(0.01, length(dpos));
+    return dpos * 0.01 / (dist * dist * dist);
 }
