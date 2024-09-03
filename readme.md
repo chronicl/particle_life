@@ -3,6 +3,9 @@
 
 A fully gpu driven implementation of particle life made in bevy.
 
+Particle Life is a simulation that models interactions between particles, where each particle is assigned a color. The colors determine the interactions: a color may either attract, repel or be neutral towards each of the other colors. However, this relation is asymmetric, so for example blue may attract red, but red may be neutral or repel blue.
+
+### Performance
 The particles are simulated in compute shaders and drawn in a custom render pass.
 On my rtx 2070 super I achieve 60fps with 300k particles, bounds of 20k and max distance of 300 (these are the performance critical settings). However, the fps can drop lower based on how clustered the particles become, because a grid based spatial partitioning acceleration structure is used.
 
