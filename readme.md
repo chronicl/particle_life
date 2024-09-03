@@ -1,5 +1,5 @@
 ## Particle Life
-![demo-image](https://github.com/chroncl/particle-life/blob/main/assets/screenshot.png)
+![demo-image](https://github.com/chronicl/particle_life/blob/main/assets/screenshot.png)
 
 A fully gpu driven implementation of particle life made in bevy.
 
