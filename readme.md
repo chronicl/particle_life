@@ -3,7 +3,7 @@
 
 A fully gpu driven implementation of particle life made in bevy.
 
-Particle Life is a color based particle simulation: a color may either attract, repel or be neutral towards each of the other colors. However, this relation is asymmetric, so for example a blue may attract red, but red may be neutral or repel blue.
+Particle Life is a color based particle simulation: a color may either attract, repel or be neutral towards each of the other colors. However, this relation is asymmetric, so for example blue may attract red, but red may be neutral or repel blue.
 
 ### Performance
 The particles are simulated in compute shaders and drawn in a custom render pass.
