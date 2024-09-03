@@ -10,3 +10,8 @@ On my rtx 2070 super I achieve 60fps with 300k particles, bounds of 20k and max 
 If you are on windows (64 bit) you can simply download the latest release from the [releases page](https://github.com/chronicl/particle_life/releases).
 
 Otherwise you will have to build it yourself. Simply clone this repo, install [rust](https://www.rust-lang.org/tools/install) and run `cargo run --release --no-default-features`.
+
+### Sharing
+The settings include a "Copy settings to clipboard" button. Simply click that and you can share your amazing settings with other people (`ctrl + v`). They can then copy it and press the "Paste settings from clipboard" button to get the same settings as you.
+
+If "Paste settings from clipboard" doesn't do anything, you are either using different versions of the app or the settings are invalid in some other way.
